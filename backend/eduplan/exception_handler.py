@@ -20,6 +20,8 @@ def custom_exception_handler(exc, context):
     response = exception_handler(exc, context)
 
     if response is None:
+        import traceback
+        traceback.print_exc()
         return Response({'error': 'Internal server error'}, status=500)
 
     if isinstance(response.data, dict) and 'detail' in response.data:

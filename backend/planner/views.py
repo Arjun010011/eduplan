@@ -5,9 +5,8 @@ from rest_framework import status
 from .models import CoursePlan
 from .serializers import CoursePlanRequestSerializer, CoursePlanResponseSerializer
 import json
-from datetime import timedelta
 
-from .utils.gemini_client import generate_week_details
+from .utils.gemini_client import generate_lesson_details
 from .utils.pdf_renderer import compile_plan_json_to_pdf
 
 
@@ -29,7 +28,7 @@ class GenerateCoursePlanView(APIView):
     """
     POST /api/planner/generate/
 
-    Accepts course plan parameters, calls Gemini to generate plan JSON,
+    Accepts course plan parameters, calls the AI to generate lesson plan JSON,
     renders it to PDF, and returns the download URL.
     """
 
@@ -46,38 +45,37 @@ class GenerateCoursePlanView(APIView):
             board=data['board'],
             grade=data['grade'],
             subject=data['subject'],
-            start_date=data['start_date'],
-            end_date=data['end_date'],
+            num_lessons=data['num_lessons'],
             prompt_input=data.get('instructions', ''),
         )
 
         try:
-            weeks = _build_week_ranges(data['start_date'], data['end_date'])
-            all_weeks = []
-            chunk_size = 10
-            for i in range(0, len(weeks), chunk_size):
-                chunk = weeks[i:i + chunk_size]
-                chunk_details = generate_week_details(
+            # Build a simple lesson list: [{"lesson_no": 1}, {"lesson_no": 2}, ...]
+            lessons_input = [{"lesson_no": i + 1} for i in range(data['num_lessons'])]
+
+            all_lessons = []
+            chunk_size = 5  # Small chunks keep API responses well under token limits
+            for i in range(0, len(lessons_input), chunk_size):
+                chunk = lessons_input[i:i + chunk_size]
+                chunk_details = generate_lesson_details(
                     teacher_name=data['teacher_name'],
                     board=data['board'],
                     grade=data['grade'],
                     subject=data['subject'],
-                    start_date=str(data['start_date']),
-                    end_date=str(data['end_date']),
                     instructions=data.get('instructions', ''),
-                    week_chunk=chunk,
+                    lesson_chunk=chunk,
                 )
-                normalized = _normalize_week_chunk(chunk, chunk_details)
-                all_weeks.extend(normalized)
+                normalized = _normalize_lesson_chunk(chunk, chunk_details)
+                all_lessons.extend(normalized)
 
             plan_payload = {
-                "title": "Course Completion Plan",
+                "title": "Lesson Plan",
                 "teacher_name": data['teacher_name'],
                 "board": data['board'],
                 "grade": str(data['grade']),
                 "subject": data['subject'],
-                "date_range": f"{data['start_date']} to {data['end_date']}",
-                "weeks": all_weeks,
+                "num_lessons": data['num_lessons'],
+                "lessons": all_lessons,
             }
             plan_json_text = json.dumps(plan_payload, ensure_ascii=False, separators=(",", ":"))
         except Exception as e:
@@ -100,45 +98,23 @@ class GenerateCoursePlanView(APIView):
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
-def _build_week_ranges(start_date, end_date):
-    weeks = []
-    current = start_date
-    week_no = 1
-    while current <= end_date:
-        week_end = min(current + timedelta(days=6), end_date)
-        weeks.append(
-            {
-                "week_no": week_no,
-                "date_range": f"{current.isoformat()} to {week_end.isoformat()}",
-                "buffer": False,
-            }
-        )
-        week_no += 1
-        current = week_end + timedelta(days=1)
-
-    for i in range(1, min(2, len(weeks)) + 1):
-        weeks[-i]["buffer"] = True
-
-    return weeks
-
-
-def _normalize_week_chunk(chunk, chunk_details):
+def _normalize_lesson_chunk(chunk, chunk_details):
     if not isinstance(chunk_details, list):
-        raise RuntimeError("Week details must be a JSON array.")
+        raise RuntimeError("Lesson details must be a JSON array.")
 
-    by_week_no = {}
+    by_lesson_no = {}
     for item in chunk_details:
         if not isinstance(item, dict):
             continue
         try:
-            week_no = int(item.get("week_no"))
+            lesson_no = int(item.get("lesson_no"))
         except (TypeError, ValueError):
             continue
-        by_week_no[week_no] = item
+        by_lesson_no[lesson_no] = item
 
     normalized = []
-    for week in chunk:
-        item = by_week_no.get(week["week_no"], {})
+    for lesson in chunk:
+        item = by_lesson_no.get(lesson["lesson_no"], {})
         topic = str(item.get("topic", "")).strip()
         objectives = item.get("objectives") or []
         activities = item.get("activities") or []
@@ -148,36 +124,22 @@ def _normalize_week_chunk(chunk, chunk_details):
         if not isinstance(activities, list):
             activities = [str(activities)]
 
-        objectives = [str(v).strip() for v in objectives if str(v).strip()][:2]
-        activities = [str(v).strip() for v in activities if str(v).strip()][:2]
-
-        if week["buffer"]:
-            topic = "Revision / Assessment"
-            if not objectives:
-                objectives = [
-                    "Review key concepts covered so far.",
-                    "Identify weak areas for focused practice.",
-                ]
-            if not activities:
-                activities = [
-                    "Revision worksheet and class discussion.",
-                    "Short unit test or quiz.",
-                ]
+        objectives = [str(v).strip() for v in objectives if str(v).strip()]
+        activities = [str(v).strip() for v in activities if str(v).strip()]
 
         if not topic:
             topic = "Syllabus Progression"
         if len(objectives) < 2:
-            objectives += ["Reinforce key concepts."] * (2 - len(objectives))
+            objectives += ["Understand core concepts."] * (2 - len(objectives))
         if len(activities) < 2:
-            activities += ["Guided practice and discussion."] * (2 - len(activities))
+            activities += ["Guided practice and review."] * (2 - len(activities))
 
         normalized.append(
             {
-                "week_no": week["week_no"],
-                "date_range": week["date_range"],
+                "lesson_no": lesson["lesson_no"],
                 "topic": topic,
-                "objectives": objectives[:2],
-                "activities": activities[:2],
+                "objectives": objectives,
+                "activities": activities,
             }
         )
 

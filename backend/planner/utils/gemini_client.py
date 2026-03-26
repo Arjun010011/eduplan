@@ -6,35 +6,35 @@ import tempfile
 import requests
 from django.conf import settings
 
-WEEK_CHUNK_PROMPT_TEMPLATE = """
+LESSON_CHUNK_PROMPT_TEMPLATE = """
 You are an expert curriculum designer for Indian school boards.
 
-Generate detailed weekly plan content in JSON for the following:
+Generate highly detailed and comprehensive lesson plan content in JSON for the following:
 - Board: {board}
 - Grade: {grade}
 - Subject: {subject}
-- Start Date: {start_date}
-- End Date: {end_date}
 - Teacher Name: {teacher_name}
 - Special Instructions: {instructions}
 
-Requirements:
-- Use the standard {board} syllabus structure for Grade {grade} {subject}.
-- Assume approximately 5 teaching days per week (Monday to Friday).
-- For buffer weeks, set topic to "Revision / Assessment" and focus on review and testing.
+CRITICAL: You MUST strictly follow the official {board} syllabus for Grade {grade} {subject}. Ensure all chapter and topic names are 100% accurate.
 
-Input weeks (JSON array). Each item includes week_no, date_range, and buffer:
-{weeks_json}
+Input lessons (JSON array). Each item includes lesson_no:
+{lessons_json}
 
-Output ONLY a JSON array with the same number of items and same order.
-Each item must include:
-{{"week_no":1,"date_range":"YYYY-MM-DD to YYYY-MM-DD","topic":"...","objectives":["...","..."],"activities":["...","..."]}}
+Output Format: You MUST return a VALID JSON array of objects. 
+Each object MUST have these exact keys: "lesson_no", "topic", "objectives", "activities".
 
-Rules:
-- "objectives" and "activities" must be arrays with exactly 2 short strings.
-- Keep each string concise (8-12 words max).
-- Use compact JSON (no pretty formatting or extra whitespace).
-- Do NOT include markdown fences or commentary. Return only JSON.
+Example structure for 2 lessons:
+[
+  {{"lesson_no": 1, "topic": "Accurate Chapter Name", "objectives": ["Obj 1", "Obj 2", "Obj 3"], "activities": ["Act 1", "Act 2", "Act 3"]}},
+  {{"lesson_no": 2, "topic": "Next Chapter", "objectives": ["Obj 1", "Obj 2", "Obj 3"], "activities": ["Act 1", "Act 2", "Act 3"]}}
+]
+
+CRITICAL RULES:
+1. STRICT JSON ONLY. No markdown fences, no commentary.
+2. DO NOT use double quotes (") inside your string values. Use single quotes (') if needed.
+3. You must create a SEPARATE object for EACH lesson_no provided in the input. Do NOT merge them.
+4. "objectives" and "activities" must be arrays of 3 to 5 highly detailed items.
 """.strip()
 
 
@@ -49,6 +49,12 @@ def _extract_json_array(text):
         text = text[start:end + 1]
     text = re.sub(r",(\s*[}\]])", r"\1", text)
 
+    # If the model was cut off inside a string value (odd number of unescaped
+    # quotes), close the string before balancing brackets/braces.
+    unescaped_quotes = len(re.findall(r'(?<!\\)"', text))
+    if unescaped_quotes % 2 != 0:
+        text = text.rstrip() + '"'
+
     # Balance brackets/braces if the model truncates near the end.
     open_brackets = text.count("[")
     close_brackets = text.count("]")
@@ -59,34 +65,44 @@ def _extract_json_array(text):
     if open_braces > close_braces:
         text = text + ("}" * (open_braces - close_braces))
 
+    decoder = json.JSONDecoder()
     try:
-        return json.loads(text)
+        # raw_decode stops at the end of the first valid JSON value, ignoring
+        # any trailing text the model may append after the array.
+        result, _ = decoder.raw_decode(text)
+        return result
     except json.JSONDecodeError:
-        # Heuristic repairs for missing commas.
+        # Heuristic repairs for missing commas and braces.
         repaired = text
         repaired = re.sub(r"}\s*{", "},{", repaired)
+        repaired = re.sub(r"\]\s*,\s*{", "]},{", repaired)
+        repaired = re.sub(r"\]\"\s*}", "]}", repaired)  # Fix rogue `]"` instead of `]`
+        repaired = re.sub(r"\]\s*\]\s*}", "]}", repaired)  # Fix rogue `]]}` instead of `]}`
         repaired = re.sub(r"\"\s*(?=[A-Za-z_][A-Za-z0-9_]*\"\s*:)", "\",", repaired)
         repaired = re.sub(r"\]\s*(?=[A-Za-z_][A-Za-z0-9_]*\"\s*:)", "],", repaired)
         repaired = re.sub(r"}\s*(?=[A-Za-z_][A-Za-z0-9_]*\"\s*:)", "},", repaired)
-        return json.loads(repaired)
+        
+        try:
+            result, _ = decoder.raw_decode(repaired)
+            return result
+        except json.JSONDecodeError as e:
+            raise ValueError(f"JSON repair failed: {e}. Raw text: {text}")
 
 
-def generate_week_details(teacher_name, board, grade, subject, start_date, end_date, instructions, week_chunk):
+def generate_lesson_details(teacher_name, board, grade, subject, instructions, lesson_chunk):
     """
-    Calls OpenRouter with a structured curriculum prompt.
-    Returns a list of week dicts with topic/objectives/activities.
+    Calls OpenRouter with a structured lesson prompt.
+    Returns a list of lesson dicts with topic/objectives/activities.
     """
-    weeks_json = json.dumps(week_chunk, ensure_ascii=False, separators=(",", ":"))
+    lessons_json = json.dumps(lesson_chunk, ensure_ascii=False, separators=(",", ":"))
 
-    prompt = WEEK_CHUNK_PROMPT_TEMPLATE.format(
+    prompt = LESSON_CHUNK_PROMPT_TEMPLATE.format(
         teacher_name=teacher_name,
         board=board,
         grade=grade,
         subject=subject,
-        start_date=start_date,
-        end_date=end_date,
         instructions=instructions or 'None',
-        weeks_json=weeks_json,
+        lessons_json=lessons_json,
     )
 
     model = getattr(settings, "OPENROUTER_MODEL", "google/gemini-2.5-flash")
@@ -119,16 +135,21 @@ def generate_week_details(teacher_name, board, grade, subject, start_date, end_d
         raise RuntimeError(f"OpenRouter error {response.status_code}: {response.text}")
 
     data = response.json()
-    raw_text = (
-        data.get("choices", [{}])[0]
-        .get("message", {})
-        .get("content", "")
-    )
+    raw_text = ""
+    choices = data.get("choices", [])
+    if choices:
+        raw_text = choices[0].get("message", {}).get("content")
+
+    if raw_text is None:
+        raw_text = ""
+
     try:
+        if not raw_text:
+            raise ValueError(f"Empty or null 'content' in API response. Response data: {data}")
         return _extract_json_array(raw_text)
     except Exception as exc:
         # Persist raw output for debugging.
-        debug_path = os.path.join(tempfile.gettempdir(), "openrouter_week_chunk_last.json")
+        debug_path = os.path.join(tempfile.gettempdir(), "openrouter_lesson_chunk_last.json")
         with open(debug_path, "w", encoding="utf-8") as f:
-            f.write(raw_text)
+            f.write(str(raw_text))
         raise RuntimeError(f"{exc} (raw output saved to {debug_path})")

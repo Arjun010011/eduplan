@@ -54,21 +54,13 @@ const PlannerForm = ({ values, onChange, onSubmit, submitting }) => {
       </label>
 
       <label>
-        Start Date
+        Number of Lessons
         <input
-          type="date"
-          value={values.start_date}
-          onChange={(event) => onChange('start_date', event.target.value)}
-          required
-        />
-      </label>
-
-      <label>
-        End Date
-        <input
-          type="date"
-          value={values.end_date}
-          onChange={(event) => onChange('end_date', event.target.value)}
+          type="number"
+          min={1}
+          max={60}
+          value={values.num_lessons}
+          onChange={(event) => onChange('num_lessons', Number(event.target.value))}
           required
         />
       </label>

@@ -1,0 +1,5 @@
+No changes detected in app 'planner'
+Operations to perform:
+  Apply all migrations: admin, auth, contenttypes, planner, sessions, textbooks
+Running migrations:
+  No migrations to apply.

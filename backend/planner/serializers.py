@@ -7,14 +7,8 @@ class CoursePlanRequestSerializer(serializers.Serializer):
     board = serializers.ChoiceField(choices=['CBSE', 'ICSE', 'KA_STATE'])
     grade = serializers.IntegerField(min_value=1, max_value=12)
     subject = serializers.CharField(max_length=100)
-    start_date = serializers.DateField()
-    end_date = serializers.DateField()
+    num_lessons = serializers.IntegerField(min_value=1, max_value=60)
     instructions = serializers.CharField(required=False, allow_blank=True, default='')
-
-    def validate(self, data):
-        if data['end_date'] <= data['start_date']:
-            raise serializers.ValidationError('end_date must be after start_date.')
-        return data
 
 
 class CoursePlanResponseSerializer(serializers.ModelSerializer):
@@ -30,5 +24,5 @@ class CoursePlanResponseSerializer(serializers.ModelSerializer):
         model = CoursePlan
         fields = [
             'id', 'teacher_name', 'board', 'grade', 'subject',
-            'start_date', 'end_date', 'latex_output', 'pdf_url', 'created_at'
+            'num_lessons', 'latex_output', 'pdf_url', 'created_at'
         ]

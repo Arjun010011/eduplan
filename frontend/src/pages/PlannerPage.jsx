@@ -11,8 +11,7 @@ const PlannerPage = () => {
     board: 'CBSE',
     grade: 5,
     subject: 'Maths',
-    start_date: '',
-    end_date: '',
+    num_lessons: 20,
     instructions: '',
   });
   const [submitting, setSubmitting] = useState(false);
@@ -34,8 +33,7 @@ const PlannerPage = () => {
         board: values.board,
         grade: Number(values.grade),
         subject: values.subject,
-        start_date: values.start_date,
-        end_date: values.end_date,
+        num_lessons: Number(values.num_lessons),
         instructions: values.instructions,
       };
       const data = await generatePlan(payload);
@@ -51,8 +49,8 @@ const PlannerPage = () => {
   return (
     <section className="planner-page">
       <header>
-        <h1>AI Course Completion Planner</h1>
-        <p>Generate a week-by-week plan with Claude and get a PDF instantly.</p>
+        <h1>AI Lesson Planner</h1>
+        <p>Generate a lesson-by-lesson plan with AI and download it as a PDF instantly.</p>
       </header>
 
       {submitting && <GeneratingLoader />}
