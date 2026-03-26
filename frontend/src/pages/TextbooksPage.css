@@ -1,0 +1,67 @@
+.textbooks-page header {
+  margin-bottom: 24px;
+}
+
+.textbooks-page h1 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.textbooks-page p {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 15px;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 20px;
+}
+
+.skeleton-card {
+  height: 300px;
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 50%, #e2e8f0 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.empty-state {
+  padding: 48px 24px;
+  text-align: center;
+  background: var(--color-card);
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-size: 15px;
+}
+
+.error-box {
+  padding: 16px;
+  border-left: 4px solid var(--color-error);
+  background: #fef2f2;
+  color: #991b1b;
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  font-size: 14px;
+}

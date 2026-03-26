@@ -1,0 +1,10 @@
+# backend/requirements.txt
+
+django>=4.2
+djangorestframework>=3.14
+django-cors-headers>=4.0
+django-filter>=23.0
+requests>=2.31
+beautifulsoup4>=4.12
+python-decouple>=3.8
+reportlab>=4.0

@@ -1,0 +1,78 @@
+.planner-form {
+  display: grid;
+  gap: 20px;
+  background: var(--color-card);
+  padding: 32px;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow);
+}
+
+.planner-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-muted);
+}
+
+.planner-form input,
+.planner-form select,
+.planner-form textarea {
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: #fff;
+  font-size: 14px;
+  color: var(--color-text);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.planner-form input:focus,
+.planner-form select:focus,
+.planner-form textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.planner-form input:hover,
+.planner-form select:hover,
+.planner-form textarea:hover {
+  border-color: #cbd5e1;
+}
+
+.planner-form textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.planner-form button {
+  padding: 14px 20px;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+}
+
+.planner-form button:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.planner-form button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.planner-form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
