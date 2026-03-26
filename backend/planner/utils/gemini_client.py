@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import tempfile
@@ -44,9 +45,20 @@ def _extract_json_array(text):
         lines = text.splitlines()
         text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
     if "[" in text and "]" in text:
-        start = text.find("[")
-        end = text.rfind("]")
-        text = text[start:end + 1]
+        # Prefer a JSON array that starts with "[{" and ends with "}]" if present.
+        start = None
+        end = None
+        start_match = re.search(r"\[\s*\{", text)
+        if start_match:
+            start = start_match.start()
+            end_matches = list(re.finditer(r"\}\s*\]", text))
+            if end_matches:
+                end = end_matches[-1].end()
+        if start is None or end is None:
+            start = text.find("[")
+            end = text.rfind("]")
+            end = end + 1 if end != -1 else len(text)
+        text = text[start:end]
     text = re.sub(r",(\s*[}\]])", r"\1", text)
 
     # If the model was cut off inside a string value (odd number of unescaped
@@ -86,6 +98,32 @@ def _extract_json_array(text):
             result, _ = decoder.raw_decode(repaired)
             return result
         except json.JSONDecodeError as e:
+            # Last-resort salvage: split on lesson_no objects and rebuild a clean array.
+            chunks = re.split(r"(?=\{\s*\"lesson_no\"\s*:)", text)
+            objects = []
+            for chunk in chunks:
+                chunk = chunk.strip()
+                if not chunk:
+                    continue
+                if not chunk.startswith("{"):
+                    continue
+                # Trim anything after the last closing brace if present.
+                last_brace = chunk.rfind("}")
+                if last_brace != -1:
+                    chunk = chunk[: last_brace + 1]
+                # Balance braces if truncated.
+                open_braces = chunk.count("{")
+                close_braces = chunk.count("}")
+                if open_braces > close_braces:
+                    chunk = chunk + ("}" * (open_braces - close_braces))
+                try:
+                    obj, _ = decoder.raw_decode(chunk)
+                    if isinstance(obj, dict):
+                        objects.append(obj)
+                except json.JSONDecodeError:
+                    continue
+            if objects:
+                return objects
             raise ValueError(f"JSON repair failed: {e}. Raw text: {text}")
 
 
@@ -138,18 +176,48 @@ def generate_lesson_details(teacher_name, board, grade, subject, instructions, l
     raw_text = ""
     choices = data.get("choices", [])
     if choices:
-        raw_text = choices[0].get("message", {}).get("content")
+        message = choices[0].get("message", {}) or {}
+        raw_text = message.get("content")
+        if not raw_text:
+            # Some OpenRouter models emit content in a separate reasoning field.
+            raw_text = message.get("reasoning")
+        if not raw_text:
+            # Some models return a list of reasoning parts.
+            reasoning_parts = message.get("reasoning_details")
+            if isinstance(reasoning_parts, list):
+                collected = []
+                for part in reasoning_parts:
+                    if isinstance(part, dict):
+                        text = part.get("text")
+                        if text:
+                            collected.append(text)
+                if collected:
+                    raw_text = "\n".join(collected)
+        if not raw_text:
+            # Fallback for older-style completions.
+            raw_text = choices[0].get("text")
 
     if raw_text is None:
         raw_text = ""
 
+    logger = logging.getLogger(__name__)
     try:
         if not raw_text:
-            raise ValueError(f"Empty or null 'content' in API response. Response data: {data}")
-        return _extract_json_array(raw_text)
+            # Avoid hard-failing when providers return empty content.
+            logger.warning("OpenRouter returned empty content; using fallback empty lesson list.")
+            debug_path = os.path.join(tempfile.gettempdir(), "openrouter_lesson_chunk_last.json")
+            with open(debug_path, "w", encoding="utf-8") as f:
+                f.write(str(data))
+            return []
+        parsed = _extract_json_array(raw_text)
+        if not isinstance(parsed, list):
+            logger.warning("OpenRouter returned non-array JSON; using fallback empty lesson list.")
+            return []
+        return parsed
     except Exception as exc:
-        # Persist raw output for debugging.
+        # Persist raw output for debugging and allow request to complete.
         debug_path = os.path.join(tempfile.gettempdir(), "openrouter_lesson_chunk_last.json")
         with open(debug_path, "w", encoding="utf-8") as f:
             f.write(str(raw_text))
-        raise RuntimeError(f"{exc} (raw output saved to {debug_path})")
+        logger.warning("OpenRouter JSON parsing failed: %s", exc)
+        return []
